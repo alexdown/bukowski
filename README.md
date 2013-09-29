@@ -7,7 +7,7 @@ http://unipdleague.cvs.sourceforge.net/viewvc/unipdleague/bukowski/
 
 **This was a school project, dated back 2004. It's old, insecure, probably incomplete, terrible code to read. It's here only out of nostalgia :)**
 
-On how to install, please check the [install](https://github.com/alexdown/bukowski/blob/master/install/readme.txt) link.
+On how to install, please check the [install](https://github.com/alexdown/bukowski/blob/master/install/readme.txt) link, or keep reading if you don't speak italian ;)
 
 
 ----------------------------------------------------------------------------
