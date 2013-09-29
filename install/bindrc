@@ -1,0 +1,16 @@
+#!/bin/bash
+
+echo 
+echo Sto configurando il server dns...
+
+cp named.conf /etc
+cp localhost.zone /var/named
+cp named.ca /var/named
+cp named.local /var/named
+cp paperopoli.net.conf /var/named
+cp 192.168.0.conf /var/named
+
+echo Terminato. Digita
+echo    service named start
+echo per avviare il server dns.
+echo 

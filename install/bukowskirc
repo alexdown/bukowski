@@ -1,0 +1,18 @@
+#!/bin/bash
+
+echo ;
+echo Sto creando le directory di lavoro di Bukowski Mail Server...;
+
+mkdir /tmp/bukowski;
+mkdir /tmp/bukowski/outbox;
+mkdir /tmp/bukowski/paperinik;
+mkdir /tmp/bukowski/nonnapapera;
+
+cp passwd.properties /tmp/bukowski;
+
+cp pop3.properties ~;
+cp smtp.properties ~;
+
+cat msg1.txt;
+
+echo ;

@@ -1,0 +1,9 @@
+Terminato. Bukowski e' pronto per essere eseguito.
+
+digita
+   java -jar bukowski.jar
+per l'smtp,
+   java -jar pop3.jar
+per il pop3
+
+nella directory $BUKOWSKI_HOME/jar

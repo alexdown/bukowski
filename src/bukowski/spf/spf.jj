@@ -1,0 +1,379 @@
+/*
+	Definizione della grammatica per stringhe spf.
+	Vedi http://spf.pobox.com/spf-draft-20040209.txt
+	Meccanismi implementati: A, MX, Redirect, Include, IP4, All
+*/
+
+options {
+	DEBUG_PARSER=false;
+	STATIC=false;
+}
+
+
+PARSER_BEGIN(SPFParser)
+
+package bukowski.spf;
+
+import java.io.*;
+import java.net.*;
+import bukowski.dns.*;
+
+public class SPFParser {
+
+	private String dominioMittente;
+	private InetAddress IpSottoEsame;
+	
+	/** converte da una stringa contenente l'indirizzo ip in formato ipv4 a un array di byte */
+	private byte[] ip2byte (String ip){
+		int primoPunto = ip.indexOf('.');
+		int secondoPunto = ip.indexOf('.', primoPunto + 1);
+		int terzoPunto = ip.indexOf('.', secondoPunto + 1);
+		byte[] address = new byte[4];
+
+		address[0] = (byte)Integer.parseInt(ip.substring(0, primoPunto));
+		address[1] = (byte)Integer.parseInt(ip.substring(primoPunto + 1, secondoPunto));
+		address[2] = (byte)Integer.parseInt(ip.substring(secondoPunto + 1, terzoPunto));
+		address[3] = (byte)Integer.parseInt(ip.substring(terzoPunto + 1));
+		return address;
+	}
+	
+	/** converte da un array di byte contenente l'indirizzo ip in formato ipv4 a un intero*/
+	private int byte2int (byte[] address){
+		return    (address[0] << 24) & 0xFF000000
+			| (address[1] << 16) & 0x00FF0000
+			| (address[2] << 8)  & 0x0000FF00
+			| (address[3])       & 0x000000FF;
+	
+	}
+
+	/** compara due indirizzi ip secondo la maschera mask */
+	private boolean ipControl (String ip1, String ip2, String mask){
+
+		int intmask = 32;
+		if (mask != null) {
+			intmask = Integer.parseInt(mask);
+		}
+		int a, b;
+		int intip1 = byte2int(ip2byte(ip1));
+		int intip2 = byte2int(ip2byte(ip2));
+	
+		for (int i = 0; i < intmask; i++) {
+			a = ((intip1 >> (32 - i) ) & 0x00000001);
+			b = ((intip2 >> (32 - i) ) & 0x00000001);
+			
+			if (a != b) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+	
+}
+
+PARSER_END(SPFParser)
+
+SKIP :
+{
+  "\t"
+| "\n"
+| "\r"
+}
+
+
+TOKEN:
+{
+	<NON_ZERO_DIGIT: ["1"-"9"] >
+|	<DIGIT: "0" | <NON_ZERO_DIGIT> >
+|	<INTEGER: (<DIGIT>)+ >
+|	<IP4_NETWORK: <INTEGER> "." <INTEGER> "." <INTEGER> "." <INTEGER> >
+|	<IP6_NETWORK: <INTEGER> ":" <INTEGER> ":" <INTEGER> ":" <INTEGER> ":" <INTEGER> ":" <INTEGER> ":" <INTEGER> ":" <INTEGER> >
+}
+
+
+String Input(InetAddress IpSottoEsame, String dominioMittente) :
+{
+	//=> ogni volta che chiamo SPFParser.input(InetAddress, String)
+	this.IpSottoEsame = IpSottoEsame;
+	this.dominioMittente = dominioMittente;
+	//prefisso di default
+	String prefissoSpecificato = "+";
+	boolean risultato;
+	String risultato2;
+}
+{
+	"v=spf" <NON_ZERO_DIGIT> [ "." ] ( <DIGIT> )* 
+	
+	(
+		(" ")+  (
+			
+			(
+				[ prefissoSpecificato=Prefisso() ]
+				
+				risultato=Meccanismo()
+			
+				{
+					if (risultato) {
+						switch (prefissoSpecificato.charAt(0)) {
+						case '+': return "pass";
+						case '-': return "fail";
+						case '?': return "neutral";
+						case '~': return "softfail";
+						}
+					}
+	  			}
+			)
+
+		
+		
+			|
+  
+  
+			risultato2=Redirect()
+			{
+				return risultato2;
+			}
+			
+		)
+	)+
+	<EOF>
+  
+  	{
+		return "neutral";
+	}
+}
+
+TOKEN:
+{
+	<PREFISSO_PASS: "+">
+|	<PREFISSO_FAIL: "-">
+|	<PREFISSO_NEUTRAL: "?">
+|	<PREFISSO_SOFTFAIL: "~">
+}
+
+String Prefisso() :
+{
+	Token p;
+}
+{
+	( p=<PREFISSO_PASS> | p=<PREFISSO_FAIL> | p=<PREFISSO_NEUTRAL> | p=<PREFISSO_SOFTFAIL> )
+	{	
+		return p.image;
+	}
+}
+
+
+
+void MeccanismoEXIST() :
+{}
+{
+	"exists:" ( <DOMAIN_SPECIFICATION> )+
+}
+
+void MeccanismoEXP() :
+{}		 
+{
+	"exp:" ( <DOMAIN_SPECIFICATION> )+
+}
+
+
+
+		 
+
+
+
+boolean Meccanismo() :
+{
+	boolean risultato = false;
+}
+{
+	(
+		  risultato=MeccanismoAll()
+		| risultato=MeccanismoInclude()
+		| risultato=MeccanismoA()
+		| risultato=MeccanismoMX()
+		| risultato=MeccanismoIP4()
+		| MeccanismoIP6()
+		| MeccanismoPTR()
+		| MeccanismoEXIST()
+		| MeccanismoEXP()
+		 
+	)
+	
+	{
+		return risultato;
+	}
+}
+
+String Redirect() :
+{
+	Token dominioToken = null;
+}
+{
+	"redirect=" dominioToken=<DOMAIN_SPECIFICATION>
+	{
+		//cerca il match sulla stringa spf del dominio specificato
+		String risultato = "fail";
+		try {
+			SPFParser parser = new SPFParser(new StringReader(DNSQuery.querySPF(dominioToken.image)));
+			risultato = parser.Input(IpSottoEsame, dominioToken.image);
+		}
+		catch (Exception e) {
+		}
+		return risultato;
+	}
+}
+
+boolean MeccanismoAll() :
+{}
+{
+	"all"
+
+	{
+		//ritorna sempre vero
+		return true;
+	}
+}
+
+boolean MeccanismoInclude() :
+{
+	Token dominioToken = null;
+}
+{
+	"include:" dominioToken=<DOMAIN_SPECIFICATION>
+	{
+		//include il controllo della stringa spf del dominio specificato
+		boolean risultato = false;
+		try {
+			SPFParser parser = new SPFParser(new StringReader(DNSQuery.querySPF(dominioToken.image)));
+			risultato = parser.Input(IpSottoEsame, dominioToken.image).equals("pass");
+		}
+		catch (Exception e) {
+		}
+		return risultato;
+	}
+}
+
+boolean MeccanismoA() : 
+{
+	Token dominioToken = null, sottoreteToken = null;
+	String dominio, sottorete = null;
+}
+{
+	"a" [ ":"  dominioToken=<DOMAIN_SPECIFICATION> ] [ "/" sottoreteToken=<INTEGER> ]
+	{
+		if (dominioToken == null) {
+			dominio = dominioMittente;
+		}
+		else {
+			dominio = dominioToken.image;
+		}
+		if (sottoreteToken != null) {
+			sottorete = sottoreteToken.image;
+		}
+
+		String[] campiA = DNSQuery.queryA(dominio);
+		
+		if (campiA != null) {
+		
+			for (int i=0; i < campiA.length; i++){
+				if (ipControl(campiA[i],IpSottoEsame.getHostAddress(),sottorete))
+					return true;
+			}
+		}
+		else {
+			return false;
+		}
+		return false;
+	}
+}
+
+boolean MeccanismoMX() : 
+{
+	Token dominioToken = null, sottoreteToken = null;
+	String dominio, sottorete = null;
+}
+{
+	
+	"mx" [ ":"  dominioToken=<DOMAIN_SPECIFICATION> ] [ "/" sottoreteToken=<INTEGER> ]
+	{
+		if (dominioToken == null) {
+			dominio = dominioMittente;
+		}
+		else {
+			dominio = dominioToken.image;
+		}
+		if (sottoreteToken != null) {
+			sottorete = sottoreteToken.image;
+		}
+
+
+		String[] campiMX = DNSQuery.queryMX(dominio);
+		if (campiMX != null) {
+
+			for (int i=0; i < campiMX.length; i++){
+				String[] campiAdiMX = DNSQuery.queryA(campiMX[i]);
+				
+				if (campiAdiMX != null) {
+					for (int j=0; j < campiAdiMX.length; j++){
+						if (ipControl(campiAdiMX[j],IpSottoEsame.getHostAddress(),sottorete))
+							return true;
+					}
+				}
+				else {
+					// da controllare: forse occorre gestire l'eccezione (abort)
+					return false;
+				}
+			}
+		}
+		else {
+			// da controllare: forse occorre gestire l'eccezione (abort)
+			return false;
+		}
+		return false;
+	}
+}
+
+
+boolean MeccanismoIP4() :
+{
+	Token ip = null;
+	Token sottoreteToken = null;
+	String sottorete = null;
+}
+{
+	"ip4:" ip=<IP4_NETWORK> [ "/" sottoreteToken=<INTEGER> ]
+	{
+		
+		if (sottoreteToken != null) {
+			sottorete = sottoreteToken.image;
+		}
+		
+		return ipControl (ip.image,IpSottoEsame.getHostAddress(),sottorete);	
+	}
+}
+
+void MeccanismoIP6() :
+{}
+{
+	"ip6:" <IP6_NETWORK> [ "/" <INTEGER> ]
+}
+
+void MeccanismoPTR() :
+{}
+{
+	"ptr" [ ":"  <DOMAIN_SPECIFICATION> ]
+}
+
+
+TOKEN:
+{
+	<VCHAR: ["!"-"~"]>
+}
+
+TOKEN:
+{
+	<ALPHA: ["A"-"Z","a"-"z"]>
+|	<DOMAIN_SPECIFICATION: <DOMAIN_PART> ( "." <DOMAIN_PART> )* >
+|	<DOMAIN_PART: (<ALPHA> | <DIGIT> | "_" | "{" | "}" | "%" ) (<ALPHA> | <DIGIT> | "_" | "-" | "{" | "}" | "%")*  (<ALPHA> | <DIGIT> | "_" | "{" | "}" | "%")>
+}
